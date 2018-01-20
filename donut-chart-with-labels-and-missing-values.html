@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Donut Chart with Labels and Missing Values V4</title>
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<style>
+	body {
+		font-family: sans-serif;
+	}
+
+	path {
+		stroke: #fff;
+		stroke-width: 2px;
+	}
+
+	polyline {
+		fill: none;
+		stroke: #000;
+		stroke-width: 2px;
+	}
+</style>
+</head>
+<body>
+</body>
+<script>
+	var width = 960,
+			height = 500,
+			radius = Math.min(width, height) / 2,
+			duration = 1000;
+
+	var svg = d3.select("body").append("svg")
+			.attr("width", width)
+			.attr("height", height)
+		.append("g")
+			.attr("transform", "translate(" + width / 2 + "," + height / 2 + ")"),
+			paths = svg.append("g").attr("class", "paths"),
+			texts = svg.append("g").attr("class", "texts"),
+			polylines = svg.append("g").attr("class", "polylines");
+
+	var labels = [
+		{ label: "Monday", order: 1 },
+		{ label: "Tuesday", order: 2 },
+		{ label: "Wednesday", order: 3 },
+		{ label: "Thursday", order: 4 },
+		{ label: "Friday", order: 5 },
+		{ label: "Saturday", order: 6 },
+		{ label: "Sunday", order: 7 }
+	];
+
+	var color = d3.scaleOrdinal()
+			.domain(labels.map(function(label) { return label.label; }))
+			.range(["#98abc5", "#8a89a6", "#7b6888", "#6b486b", "#a05d56", "#d0743c", "#ff8c00"]);
+
+	var pie = d3.pie()
+			.sort(null)
+			.value(function(d) { return d.value; });
+
+	var pathArc = d3.arc()
+			.outerRadius(radius * 0.8)
+			.innerRadius(radius * 0.5);
+
+	var textArc = d3.arc()
+			.outerRadius(radius * 0.9)
+			.innerRadius(radius * 0.9);
+
+	var key = function(d) { return d.data.label; };
+
+	function randomData() {
+		var data = labels
+			.map(function(label) {
+				return { label: label.label, value: Math.random(), order: label.order };
+			})
+			.filter(function() {
+				return Math.random() > 0.5;
+			});
+		return data;
+	}
+
+	// Given data0 = [{label: a, value: 1}, {label: b, valeu: 2}],
+	// data1 = [{label: b, value: 3}, {label: c, valeu: 4}],
+	// setMissingValuesToZero(data0, data1) should return [{label: a, value: 1}, {label: b, valeu: 2}, {label: c, value: 0}]
+	// setMissingValuesToZero(data1, data0) should return [{label: a, value: 0}, {label: b, value: 3}, {label: c, valeu: 4}]
+	function setMissingValuesToZero(data0, data1) {
+		var data0WithZeros = data0
+			.map(function(d) { return Object.assign({}, d); }); // Copy data0 to data0WithZeros
+		var data0Labels = data0.map(function(d) { return d.label; });
+		data1.forEach(function(d) { // Loop through all data1
+			if (!data0Labels.includes(d.label)) { // If a data1 label is not in data0 lables
+				data0WithZeros.push({ label: d.label, value: 0, order: d.order });
+			}
+		});
+		data0WithZeros = data0WithZeros.sort(function(a, b) { return a.order - b.order; });
+		return data0WithZeros;
+	}
+
+	function change(data1) {
+		var data0Pie = paths.selectAll("path").data();
+		var data0 = data0Pie.length === 0 ? data1 : data0Pie.map(function(d) { return d.data; });
+		var data0WithZeros = setMissingValuesToZero(data0, data1);
+		var data1WithZeros = setMissingValuesToZero(data1, data0);
+
+		console.log(data1);
+		console.log("data0WithZeros", data0WithZeros);
+		console.log("data1WithZeros", data1WithZeros);
+
+		////////////////////////////////////////////////////////////
+		// Pie path
+		var path = paths.selectAll("path")
+				.data(pie(data0WithZeros), key);
+
+		path.enter().append("path")
+				.attr("class", "slice")
+			.merge(path)
+				.style("fill", function(d) { return color(d.data.label); })
+				.each(function(d) {
+					this._current = d; // Store the displayed angles in _current.
+				});
+
+		path = paths.selectAll("path")
+				.data(pie(data1WithZeros), key);
+
+		path
+			.transition()
+				.duration(duration)
+				.attrTween("d", arcTween);
+
+		path = paths.selectAll("path")
+				.data(pie(data1), key);
+
+		path.exit()
+			.transition()
+				.delay(duration)
+				.duration(0)
+				.remove();
+
+		////////////////////////////////////////////////////////////
+		// Pie text label
+		var text = texts.selectAll("text")
+				.data(pie(data0WithZeros), key);
+
+		text.enter().append("text")
+				.attr("class", "text")
+				.attr("dy", "0.35em")
+			.merge(text)
+				.text(function(d) { return d.data.label; })
+				.each(function(d) {
+					this._current = d;
+				});
+
+		text = texts.selectAll("text")
+				.data(pie(data1WithZeros), key);
+
+		text
+			.transition()
+				.duration(duration)
+				.attrTween("transform", textTransformTween)
+				.styleTween("text-anchor", textAnchorTween);
+
+		text = texts.selectAll("text")
+				.data(pie(data1), key);
+
+		text.exit()
+			.transition()
+				.delay(duration)
+				.duration(0)
+				.remove();
+
+		////////////////////////////////////////////////////////////
+		// Pie polyline
+		var polyline = polylines.selectAll("polyline")
+				.data(pie(data0WithZeros), key);
+
+		polyline.enter().append("polyline")
+				.attr("class", "polyline")
+				.style("opacity", 0)
+			.merge(polyline)
+				.each(function(d) {
+					this._current = d;
+				});
+
+		polyline = polylines.selectAll("polyline")
+				.data(pie(data1WithZeros), key);
+
+		polyline
+			.transition()
+				.duration(duration)
+				.style("opacity", function(d) {
+					return d.data.value === 0 ? 0 : 1;
+				})
+				.attrTween("points", polylineTween);
+
+		polyline = polylines.selectAll("polyline")
+				.data(pie(data1), key);
+
+		polyline.exit()
+			.transition()
+				.delay(duration)
+				.duration(0)
+				.remove();
+	}
+
+	function arcTween(d) {
+		var i = d3.interpolate(this._current, d);
+		return function(t) {
+			return pathArc(i(t));
+		};
+	}
+
+	function textTransformTween(d) {
+		var i = d3.interpolate(this._current, d);
+		return function(t) {
+			var pos = textArc.centroid(i(t));
+			pos[0] = radius * (midAngle(i(t)) < Math.PI ? 1 : -1);
+			return "translate(" + pos + ")";
+		};
+	}
+
+	function textAnchorTween(d) {
+		var i = d3.interpolate(this._current, d);
+		return function(t) {
+			return midAngle(i(t)) < Math.PI ? "start" : "end";
+		};
+	}
+
+	function polylineTween(d) {
+		var i = d3.interpolate(this._current, d);
+		return function(t) {
+			var pos = textArc.centroid(i(t));
+			pos[0] = radius * (midAngle(i(t)) < Math.PI ? 1 : -1);
+			return [pathArc.centroid(i(t)), textArc.centroid(i(t)), pos];
+		};
+	}
+
+	function midAngle(d) {
+		return d.startAngle + (d.endAngle - d.startAngle) / 2;
+	}
+
+	setInterval(function() {
+		change(randomData());
+	}, 3000);
+
+</script>
+</html>
